@@ -16,8 +16,8 @@ public class Flashlight : MonoBehaviour
     public KeyCode toggleKey = KeyCode.F;
     public bool hasFlashlight = false;
 
-    [Header("Батарейка (можно выключить)")]
-    public bool useBattery = true;
+    [Header("Батарейка. ВЫКЛЮЧЕНА: фонарик горит стабильно, пока его не «убьёт» сюжет (Die)")]
+    public bool useBattery = false;
     public float maxBattery = 100f;
     public float drainPerSecond = 1f;
     public float battery = 100f;
@@ -32,11 +32,24 @@ public class Flashlight : MonoBehaviour
 
     Light lamp;
     float baseIntensity;
+
+    // Для других скриптов (например, FlashlightTarget — «посветить на кровать»)
+    public bool IsOn => lamp != null && lamp.enabled;
+    public Light Lamp => lamp;
+
+    // Включить фонарик (например, сразу, когда игрок его подобрал)
+    public void TurnOn()
+    {
+        if (lamp == null) lamp = GetComponent<Light>();
+        if (!hasFlashlight || busy || battery <= 0f) return;
+        lamp.enabled = true;
+        Play(clickSound);
+    }
     bool busy; // сейчас идёт мигание или поломка — кнопка F не работает
 
     void Start()
     {
-        lamp = GetComponent<Light>();
+        if (lamp == null) lamp = GetComponent<Light>();
         baseIntensity = lamp.intensity;
         lamp.enabled = false;
     }

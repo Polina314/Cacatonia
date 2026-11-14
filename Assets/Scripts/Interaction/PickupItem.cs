@@ -25,7 +25,11 @@ public class PickupItem : MonoBehaviour, IInteractable
         {
             case ItemType.Flashlight:
                 Flashlight fl = player.GetComponentInChildren<Flashlight>(true);
-                if (fl != null) fl.hasFlashlight = true;
+                if (fl != null)
+                {
+                    fl.hasFlashlight = true;
+                    fl.TurnOn(); // взял горящий фонарик — он продолжает гореть в руках
+                }
                 break;
 
             case ItemType.Battery:

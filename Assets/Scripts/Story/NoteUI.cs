@@ -14,6 +14,16 @@ public class NoteUI : MonoBehaviour
     public TMP_Text bodyText;
     public Image picture;             // для картинок (план эвакуации, рисунок). Необязательно
 
+    [Header("Где текст, когда в записке есть картинка (чтобы картинка его не закрывала)")]
+    public Vector2 bodyPosWithImage = new Vector2(0f, 300f);
+    public Vector2 bodySizeWithImage = new Vector2(1300f, 110f);
+    [Tooltip("Где и какого размера картинка")]
+    public Vector2 picturePos = new Vector2(0f, -70f);
+    public Vector2 pictureSize = new Vector2(900f, 560f);
+
+    Vector2 bodyPos, bodySize;
+    bool remembered;
+
     public bool IsOpen { get; private set; }
     // Кадр, в котором записку закрыли: чтобы та же нажатая E не открыла её снова
     public static int ClosedFrame = -1;
@@ -44,6 +54,23 @@ public class NoteUI : MonoBehaviour
 
     public void Show(string title, string body, Sprite image)
     {
+        // Запоминаем обычное место текста (как ты его поставила в редакторе)
+        if (!remembered && bodyText != null)
+        {
+            bodyPos = bodyText.rectTransform.anchoredPosition;
+            bodySize = bodyText.rectTransform.sizeDelta;
+            remembered = true;
+        }
+        if (bodyText != null)
+        {
+            bodyText.rectTransform.anchoredPosition = image != null ? bodyPosWithImage : bodyPos;
+            bodyText.rectTransform.sizeDelta = image != null ? bodySizeWithImage : bodySize;
+        }
+        if (picture != null && image != null)
+        {
+            picture.rectTransform.anchoredPosition = picturePos;
+            picture.rectTransform.sizeDelta = pictureSize;
+        }
         if (titleText != null) titleText.text = title;
         if (bodyText != null) bodyText.text = body;
         if (picture != null)

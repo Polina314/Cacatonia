@@ -19,6 +19,15 @@ public class SwingDoor : MonoBehaviour
     Quaternion closedRotation;
     Vector3 upAxis;
     int currentSide; // 0 = закрыта, +1 / -1 = открыта в одну из сторон
+    float ghostUntil = -1f; // до какого времени дверь «качается сама»
+
+    // Дверь сама качается несколько секунд, будто кто-то пробежал.
+    // Вызывать из события: SwingDoor → GhostSwing (float), например 3.
+    public void GhostSwing(float seconds)
+    {
+        ghostUntil = Time.time + seconds;
+        if (audioSource != null && swingSound != null) audioSource.PlayOneShot(swingSound);
+    }
 
     void Start()
     {
@@ -53,6 +62,14 @@ public class SwingDoor : MonoBehaviour
         Quaternion target = currentSide == 0
             ? closedRotation
             : Quaternion.AngleAxis(openAngle * currentSide, upAxis) * closedRotation;
+
+        if (Time.time < ghostUntil && currentSide == 0)
+        {
+            // Качается туда-сюда и постепенно затихает
+            float left = ghostUntil - Time.time;
+            float angle = Mathf.Sin(Time.time * 6f) * Mathf.Min(1f, left) * 45f;
+            target = Quaternion.AngleAxis(angle, upAxis) * closedRotation;
+        }
         transform.localRotation = Quaternion.Slerp(transform.localRotation, target, Time.deltaTime * speed);
     }
 
