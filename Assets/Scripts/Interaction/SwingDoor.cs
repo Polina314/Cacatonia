@@ -1,9 +1,11 @@
 using UnityEngine;
 
 // Маятниковая дверь (как в больницах между отделениями): без ручки.
-// Когда игрок подходит — створка сама отходит ОТ него, когда уходит — закрывается.
-// Вешается на каждую створку (у модели подруги pivot уже на петле).
-// Кнопка E не нужна.
+// Когда подходит игрок ИЛИ монстр — створка сама отходит от него, когда уходят — закрывается.
+// Вешается на каждую створку (pivot должен стоять на петле). Кнопка E не нужна.
+//
+// Монстр через маятниковые двери проходит ВСЕГДА (он их толкает), поэтому
+// NavMesh Obstacle на маятниковых дверях НЕ нужен — если он есть, он выключится сам.
 public class SwingDoor : MonoBehaviour
 {
     public float openAngle = 80f;
@@ -16,9 +18,10 @@ public class SwingDoor : MonoBehaviour
     public AudioClip swingSound;
 
     Transform player;
+    MonsterAI[] monsters;
     Quaternion closedRotation;
     Vector3 upAxis;
-    int currentSide; // 0 = закрыта, +1 / -1 = открыта в одну из сторон
+    int currentSide;        // 0 = закрыта, +1 / -1 = открыта в одну из сторон
     float ghostUntil = -1f; // до какого времени дверь «качается сама»
 
     // Дверь сама качается несколько секунд, будто кто-то пробежал.
@@ -38,15 +41,23 @@ public class SwingDoor : MonoBehaviour
 
         FirstPersonController fpc = FindObjectOfType<FirstPersonController>();
         if (fpc != null) player = fpc.transform;
+        monsters = FindObjectsOfType<MonsterAI>();
+
+        // на всякий случай выключаем старый obstacle, если он остался на двери
+        var obs = GetComponent<UnityEngine.AI.NavMeshObstacle>();
+        if (obs != null) obs.enabled = false;
     }
 
     void Update()
     {
-        if (player == null) return;
+        // ближайший к двери: игрок или монстр
+        Vector3 toNearest = Vector3.zero;
+        float best = float.MaxValue;
+        Consider(player, ref toNearest, ref best);
+        if (monsters != null)
+            foreach (var m in monsters) if (m != null) Consider(m.transform, ref toNearest, ref best);
 
-        Vector3 toPlayer = player.position - transform.position;
-        toPlayer.y = 0f;
-        bool near = toPlayer.magnitude < openDistance;
+        bool near = best < openDistance;
 
         if (!near)
         {
@@ -54,8 +65,8 @@ public class SwingDoor : MonoBehaviour
         }
         else if (currentSide == 0)
         {
-            // Выбираем сторону один раз, когда игрок подошёл, чтобы дверь не дёргалась
-            currentSide = AwaySign(toPlayer);
+            // Сторона выбирается один раз, когда кто-то подошёл, чтобы дверь не дёргалась
+            currentSide = AwaySign(toNearest);
             if (audioSource != null && swingSound != null) audioSource.PlayOneShot(swingSound);
         }
 
@@ -63,22 +74,31 @@ public class SwingDoor : MonoBehaviour
             ? closedRotation
             : Quaternion.AngleAxis(openAngle * currentSide, upAxis) * closedRotation;
 
+        // «Призрачное» качание (от подруги): работает, только если рядом никого нет
         if (Time.time < ghostUntil && currentSide == 0)
         {
-            // Качается туда-сюда и постепенно затихает
             float left = ghostUntil - Time.time;
             float angle = Mathf.Sin(Time.time * 6f) * Mathf.Min(1f, left) * 45f;
             target = Quaternion.AngleAxis(angle, upAxis) * closedRotation;
         }
+
         transform.localRotation = Quaternion.Slerp(transform.localRotation, target, Time.deltaTime * speed);
     }
 
-    int AwaySign(Vector3 toPlayer)
+    void Consider(Transform t, ref Vector3 toNearest, ref float best)
+    {
+        if (t == null) return;
+        Vector3 d = t.position - transform.position; d.y = 0f;
+        float dist = d.magnitude;
+        if (dist < best) { best = dist; toNearest = d; }
+    }
+
+    int AwaySign(Vector3 toWho)
     {
         Renderer r = GetComponentInChildren<Renderer>();
         Vector3 edge = (r != null ? r.bounds.center : transform.position + transform.right) - transform.position;
         edge.y = 0f;
         Vector3 move = Vector3.Cross(Vector3.up, edge);
-        return Vector3.Dot(move, toPlayer) > 0f ? -1 : 1;
+        return Vector3.Dot(move, toWho) > 0f ? -1 : 1;
     }
 }

@@ -1,13 +1,17 @@
 using UnityEngine;
+using UnityEngine.AI;
 
 // Дверь, которая плавно поворачивается на петлях. Открывается на E.
-// Скрипт вешается на объект, у которого точка вращения (pivot) стоит на петле:
-//   - у дверей из модели подруги pivot уже на петле — вешай прямо на дверь;
-//   - у наших тестовых дверей это пустышка "петля", а створка — её дочерний объект.
+// Скрипт вешается на объект, у которого pivot стоит на петле.
 // Дверь всегда крутится вокруг вертикальной оси мира, даже если модель повёрнута.
+//
+// МОНСТР И ДВЕРЬ: на дверь нужен NavMesh Obstacle (Shape = Box, Carve = вкл).
+// Закрыта — obstacle включён, прохода нет. Открыта — выключен, монстр проходит.
+// Если поле Obstacle пустое, скрипт сам берёт NavMesh Obstacle с этого объекта.
 public class Door : MonoBehaviour, IInteractable
 {
     public float openAngle = 90f;
+    public NavMeshObstacle obstacle;
     public float speed = 3f;
 
     [Tooltip("Дверь сама выбирает сторону и открывается ОТ игрока (не в лицо). " +
@@ -34,7 +38,15 @@ public class Door : MonoBehaviour, IInteractable
     bool isOpen;
     Quaternion closedRotation;
     Quaternion targetRotation;
-    Vector3 upAxis; // вертикальная ось мира, переведённая в координаты родителя
+    Vector3 upAxis;
+
+    public bool IsOpen => isOpen;
+
+    void Awake()
+    {
+        if (obstacle == null) obstacle = GetComponent<NavMeshObstacle>();
+        if (obstacle != null) obstacle.carving = true;
+    }
 
     void Start()
     {
@@ -43,6 +55,7 @@ public class Door : MonoBehaviour, IInteractable
         upAxis = transform.parent != null
             ? transform.parent.InverseTransformDirection(Vector3.up).normalized
             : Vector3.up;
+        UpdateObstacle();
     }
 
     void Update()
@@ -60,7 +73,6 @@ public class Door : MonoBehaviour, IInteractable
     {
         if (isLocked)
         {
-            // Если у игрока есть нужный ключ — отпираем
             if (!string.IsNullOrEmpty(requiredKeyId) && player.inventory != null && player.inventory.HasItem(requiredKeyId))
             {
                 isLocked = false;
@@ -76,13 +88,14 @@ public class Door : MonoBehaviour, IInteractable
         SetOpen(!isOpen, player.transform.position);
         Play(isOpen ? openSound : closeSound);
 
-        // Вторая створка повторяет за первой (без звука, чтобы не было двойного скрипа)
         if (linkedDoor != null) linkedDoor.SetOpen(isOpen, player.transform.position);
     }
 
-    public void SetOpen(bool open, Vector3 playerPosition)
+    public void SetOpen(bool open, Vector3 fromPosition)
     {
         isOpen = open;
+        UpdateObstacle();
+
         if (!open)
         {
             targetRotation = closedRotation;
@@ -91,19 +104,22 @@ public class Door : MonoBehaviour, IInteractable
 
         float angle = openAngle;
         if (openAwayFromPlayer)
-            angle = Mathf.Abs(openAngle) * AwaySign(playerPosition);
+            angle = Mathf.Abs(openAngle) * AwaySign(fromPosition);
 
         targetRotation = Quaternion.AngleAxis(angle, upAxis) * closedRotation;
     }
 
-    // +1 или -1: в какую сторону крутить, чтобы свободный край двери ушёл ОТ игрока
+    void UpdateObstacle()
+    {
+        if (obstacle != null) obstacle.enabled = !isOpen;
+    }
+
     int AwaySign(Vector3 playerPosition)
     {
         Renderer r = GetComponentInChildren<Renderer>();
         Vector3 hinge = transform.position;
-        Vector3 edge = (r != null ? r.bounds.center : hinge + transform.right) - hinge; // от петли к середине двери
+        Vector3 edge = (r != null ? r.bounds.center : hinge + transform.right) - hinge;
         edge.y = 0f;
-        // Куда начнёт двигаться край двери при повороте на +угол вокруг вертикали
         Vector3 move = Vector3.Cross(Vector3.up, edge);
         Vector3 toPlayer = playerPosition - hinge;
         toPlayer.y = 0f;
@@ -113,5 +129,14 @@ public class Door : MonoBehaviour, IInteractable
     void Play(AudioClip clip)
     {
         if (audioSource != null && clip != null) audioSource.PlayOneShot(clip);
+    }
+
+    // Чтобы монстр сам открывал незапертые двери, вызывайте это из MonsterAI.
+    public void OpenForMonster(Vector3 monsterPosition)
+    {
+        if (isLocked || isOpen) return;
+        SetOpen(true, monsterPosition);
+        Play(openSound);
+        if (linkedDoor != null) linkedDoor.SetOpen(true, monsterPosition);
     }
 }

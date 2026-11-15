@@ -11,9 +11,10 @@ public class GameManager : MonoBehaviour
     public static GameManager Instance { get; private set; }
 
     public FirstPersonController player;
-    public CanvasGroup deathScreen;   // чёрный экран с надписью "Вы погибли" (необязательно)
+    public CanvasGroup deathScreen;   // чёрный экран (необязательно)
+    public DeathScreen deathGif;      // гифка с глазами (необязательно)
     public TMP_Text messageText;      // текст для сообщений (необязательно)
-    public float respawnDelay = 2f;
+    public float respawnDelay = 2f;   // минимум; если гифка длиннее — ждём её до конца
 
     Vector3 respawnPosition;
     Quaternion respawnRotation;
@@ -31,6 +32,12 @@ public class GameManager : MonoBehaviour
         respawnPosition = player.transform.position;
         respawnRotation = player.transform.rotation;
         if (deathScreen != null) deathScreen.alpha = 0f;
+
+        // Если поле Death Gif не заполнено в Inspector — ищем сами (true = искать и среди выключенных)
+        if (deathGif == null) deathGif = FindObjectOfType<DeathScreen>(true);
+        if (deathGif == null) Debug.LogWarning("DeathScreen не найден на сцене: гифку смерти некому прятать");
+        if (deathGif != null) deathGif.Hide();
+
         if (messageText != null) messageText.text = "";
     }
 
@@ -48,27 +55,44 @@ public class GameManager : MonoBehaviour
         StartCoroutine(RespawnRoutine());
     }
 
+    // Запасное имя, если где-то в событиях Inspector вызывается KillPlayer
+    public void KillPlayer()
+    {
+        PlayerDied();
+    }
+
     IEnumerator RespawnRoutine()
     {
+        // 1. Забираем управление и показываем экран смерти
         player.canMove = false;
         if (deathScreen != null) deathScreen.alpha = 1f;
 
-        yield return new WaitForSeconds(respawnDelay);
+        float wait = respawnDelay;
+        if (deathGif != null)
+        {
+            deathGif.ShowDeath();
+            wait = Mathf.Max(wait, deathGif.TotalDuration);   // гифка успевает доиграть
+        }
 
-        // CharacterController нужно выключить, иначе он не даст телепортировать игрока
+        // 2. Ждём, пока игрок смотрит на экран смерти
+        yield return new WaitForSeconds(wait);
+
+        // 3. Телепорт игрока на чекпоинт (CharacterController на время телепорта выключаем)
         CharacterController cc = player.GetComponent<CharacterController>();
         cc.enabled = false;
         player.transform.SetPositionAndRotation(respawnPosition, respawnRotation);
         cc.enabled = true;
 
-        // Монстры возвращаются на свои стартовые места
+        // 4. Монстры: на стартовые места + полный сброс (снимает блокировку камеры, включает скрипты игрока)
         foreach (MonsterAI m in FindObjectsByType<MonsterAI>(FindObjectsSortMode.None))
-        {
-            MonsterSpawnInfo info = m.GetComponent<MonsterSpawnInfo>();
-            if (info != null) m.ResetMonster(info.StartPosition);
-        }
+            m.RespawnReset();
 
+        // 5. Прячем экран смерти и гифку
+        if (deathGif != null) deathGif.Hide();
         if (deathScreen != null) deathScreen.alpha = 0f;
+
+        // 6. Возвращаем управление: и сам компонент, и флаг
+        player.enabled = true;
         player.canMove = true;
         isDead = false;
     }
